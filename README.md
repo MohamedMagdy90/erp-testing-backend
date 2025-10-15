@@ -72,43 +72,51 @@ The server will run on `http://localhost:3001`
 ## Deployment on Render.com
 
 ### Prerequisites
-1. Create a Render account
-2. Create a new Web Service
-3. Connect this GitHub repository
+1. Create a Render account at https://render.com
+2. Fork or connect this GitHub repository
 
-### Environment Setup
+### Render Deployment Guide
 
-#### Required Render Settings:
-1. **Build Command**: `npm install`
-2. **Start Command**: `npm start`
-3. **Environment**: Node
-4. **Plan**: Choose plan with persistent disk
+#### Step 1: Create Web Service
+1. Go to Render Dashboard
+2. Click "New +" → "Web Service"
+3. Connect your GitHub repository
+4. Configure as follows:
 
-#### Persistent Disk Configuration:
-**IMPORTANT**: You need persistent disk for both database and file uploads
+#### Step 2: Basic Configuration
+- **Name**: `erp-testing-backend` (or your choice)
+- **Environment**: `Node`
+- **Build Command**: `npm install`
+- **Start Command**: `npm start`
+- **Plan**: Free tier works, but consider paid for persistent disk
 
-1. Add a persistent disk to your Render service:
-   - Mount path: `/var/data`
-   - Size: At least 1GB (adjust based on expected file uploads)
+#### Step 3: Persistent Disk Setup (OPTIONAL but RECOMMENDED)
+**Note**: The app now works WITHOUT persistent disk but data won't persist across deployments
 
-2. The application automatically detects Render environment:
-   ```javascript
-   // Database storage
-   const dbPath = fs.existsSync('/var/data')
-     ? '/var/data/testing_feedback.db'  // Render
-     : './testing_feedback.db';          // Local
+If you want persistent data storage:
+1. In your Render service settings, go to "Disks"
+2. Click "Add Disk"
+3. Configure:
+   - **Name**: `data`
+   - **Mount Path**: `/var/data`
+   - **Size**: 1GB minimum (adjust as needed)
+4. Save and redeploy
 
-   // File uploads storage
-   const uploadsDir = fs.existsSync('/var/data')
-     ? '/var/data/uploads'               // Render
-     : './uploads';                       // Local
-   ```
+Without persistent disk:
+- Database and uploads are stored locally
+- Data is lost on each deployment
+- Suitable for testing only
 
-#### Environment Variables:
-Set these in Render Dashboard:
-- `PORT` - (Optional, Render provides this)
-- `NODE_ENV` - Set to `production`
-- `FRONTEND_URL` - Your frontend URL for CORS
+#### Step 4: Environment Variables
+In Render Dashboard → Environment:
+- `NODE_ENV` = `production`
+- `FRONTEND_URL` = Your frontend URL (e.g., `https://your-app.netlify.app`)
+- `PORT` = (Leave empty, Render provides this automatically)
+
+#### Step 5: Deploy
+1. Render will automatically deploy when you push to GitHub
+2. Check deployment logs for any errors
+3. Visit the health endpoint: `https://your-service.onrender.com/health`
 
 ### File Upload Limits
 - Max file size: 10MB per file
@@ -130,6 +138,62 @@ The database tables are automatically created on first run. Existing data is pre
 - Files are stored in `/var/data/uploads` on Render
 - Database is stored in `/var/data/testing_feedback.db`
 - Both require persistent disk to survive deployments
+
+## Troubleshooting Render Deployment
+
+### Common Issues and Solutions
+
+1. **Deployment fails with "Cause of failure could not be determined"**
+   - Check the health endpoint once deployed: `/health`
+   - Review logs in Render Dashboard
+   - Ensure Node version is >=18.0.0
+
+2. **Database not persisting**
+   - You need to configure persistent disk (see Step 3 above)
+   - Check logs for "Using local database" warning
+   - Without persistent disk, data resets on each deployment
+
+3. **File uploads not working**
+   - Check if persistent disk is configured
+   - Verify write permissions in logs
+   - Look for "Using local uploads directory" in logs
+
+4. **CORS errors from frontend**
+   - Set `FRONTEND_URL` environment variable correctly
+   - Include protocol (https://) in the URL
+   - Don't add trailing slash
+
+### Health Check
+Once deployed, verify your service is running:
+```
+curl https://your-service.onrender.com/health
+```
+
+Expected response:
+```json
+{
+  "status": "healthy",
+  "timestamp": "2024-...",
+  "environment": "production",
+  "database": "connected",
+  "uploads": "available"
+}
+```
+
+### Monitoring
+- Render provides logs in the Dashboard
+- Use the `/health` endpoint for monitoring
+- Check "Events" tab for deployment history
+
+## Development vs Production
+
+| Feature | Development | Production (without disk) | Production (with disk) |
+|---------|-------------|---------------------------|------------------------|
+| Database | Local file | Memory/temp | Persistent at `/var/data` |
+| Uploads | Local folder | Memory/temp | Persistent at `/var/data/uploads` |
+| Data persistence | Until deleted | Lost on deploy | Permanent |
+| Performance | Good | Good | Best |
+| Cost | Free | Free | Paid (for disk) |
 
 ## Support
 For issues or questions, please open an issue in this repository.
