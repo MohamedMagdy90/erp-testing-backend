@@ -18,13 +18,36 @@ app.use(cors({
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
-// Create uploads directory - use persistent disk on Render
-const uploadsDir = fs.existsSync('/var/data')
-  ? '/var/data/uploads'  // Render.com persistent disk
-  : path.join(__dirname, 'uploads');  // Local development
+// Create uploads directory - use persistent disk on Render if available
+let uploadsDir;
+try {
+  // Check if we can write to /var/data (Render persistent disk)
+  if (fs.existsSync('/var/data')) {
+    // Test write permissions
+    const testFile = '/var/data/.write-test';
+    fs.writeFileSync(testFile, 'test');
+    fs.unlinkSync(testFile);
+    uploadsDir = '/var/data/uploads';
+    console.log('Using Render persistent disk at /var/data/uploads');
+  } else {
+    throw new Error('/var/data does not exist');
+  }
+} catch (error) {
+  // Fallback to local directory
+  uploadsDir = path.join(__dirname, 'uploads');
+  console.log('Using local uploads directory:', uploadsDir);
+  console.log('Note: File uploads will not persist across deployments without persistent disk');
+}
 
-if (!fs.existsSync(uploadsDir)) {
-  fs.mkdirSync(uploadsDir, { recursive: true });
+// Create uploads directory
+try {
+  if (!fs.existsSync(uploadsDir)) {
+    fs.mkdirSync(uploadsDir, { recursive: true });
+    console.log('Created uploads directory:', uploadsDir);
+  }
+} catch (error) {
+  console.error('Error creating uploads directory:', error);
+  // Continue without uploads - server can still run
 }
 
 // Multer configuration for file uploads
@@ -102,12 +125,26 @@ function safeJsonParse(str, defaultValue) {
   }
 }
 
-// Database path - use /var/data for Render.com persistent disk
-const dbPath = fs.existsSync('/var/data')
-  ? '/var/data/testing_feedback.db'
-  : './testing_feedback.db';
-
-console.log(`Using database path: ${dbPath}`);
+// Database path - use /var/data for Render.com persistent disk if available
+let dbPath;
+try {
+  // Check if we can write to /var/data (Render persistent disk)
+  if (fs.existsSync('/var/data')) {
+    // Test write permissions
+    const testFile = '/var/data/.db-write-test';
+    fs.writeFileSync(testFile, 'test');
+    fs.unlinkSync(testFile);
+    dbPath = '/var/data/testing_feedback.db';
+    console.log('Using Render persistent disk for database at:', dbPath);
+  } else {
+    throw new Error('/var/data does not exist');
+  }
+} catch (error) {
+  // Fallback to local directory
+  dbPath = './testing_feedback.db';
+  console.log('Using local database at:', dbPath);
+  console.log('WARNING: Database will not persist across deployments without persistent disk');
+}
 
 let db = new sqlite3.Database(dbPath, (err) => {
   if (err) {
@@ -679,6 +716,30 @@ function initializeDatabase() {
 }
 
 // API Routes
+
+// Health check endpoint for Render
+app.get('/health', (req, res) => {
+  res.json({
+    status: 'healthy',
+    timestamp: new Date().toISOString(),
+    environment: process.env.NODE_ENV || 'development',
+    port: PORT,
+    database: fs.existsSync(dbPath) ? 'connected' : 'initializing',
+    uploads: fs.existsSync(uploadsDir) ? 'available' : 'unavailable'
+  });
+});
+
+// Root endpoint
+app.get('/', (req, res) => {
+  res.json({
+    message: 'ERP Testing Portal Backend API',
+    version: '2.0.0',
+    endpoints: {
+      health: '/health',
+      api: '/api/*'
+    }
+  });
+});
 
 app.post('/api/sessions', (req, res) => {
   const { tester_name, tester_email, environment, browser, version_id } = req.body;
@@ -3185,19 +3246,51 @@ app.get('/api/bugs/:bug_id/tests', (req, res) => {
   });
 });
 
-app.listen(PORT, () => {
-  console.log(`Testing feedback server running on http://localhost:${PORT}`);
-  console.log('Database will be created at ./testing_feedback.db');
+// Start server with error handling
+const server = app.listen(PORT, '0.0.0.0', () => {
+  console.log(`✅ Testing feedback server running on port ${PORT}`);
+  console.log(`📁 Database location: ${dbPath}`);
+  console.log(`📂 Uploads directory: ${uploadsDir}`);
+  console.log(`🌐 Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`🔗 Health check: http://localhost:${PORT}/health`);
+});
+
+// Handle server errors
+server.on('error', (error) => {
+  console.error('❌ Server error:', error);
+  if (error.code === 'EADDRINUSE') {
+    console.error(`Port ${PORT} is already in use`);
+  }
+  process.exit(1);
+});
+
+// Graceful shutdown
+process.on('SIGTERM', () => {
+  console.log('SIGTERM signal received: closing HTTP server');
+  server.close(() => {
+    console.log('HTTP server closed');
+    db.close((err) => {
+      if (err) {
+        console.error('Error closing database:', err.message);
+      } else {
+        console.log('Database connection closed');
+      }
+      process.exit(0);
+    });
+  });
 });
 
 process.on('SIGINT', () => {
-  console.log('\nShutting down server...');
-  db.close((err) => {
-    if (err) {
-      console.error('Error closing database:', err.message);
-    } else {
-      console.log('Database connection closed.');
-    }
-    process.exit(0);
+  console.log('\nSIGINT signal received: closing HTTP server');
+  server.close(() => {
+    console.log('HTTP server closed');
+    db.close((err) => {
+      if (err) {
+        console.error('Error closing database:', err.message);
+      } else {
+        console.log('Database connection closed');
+      }
+      process.exit(0);
+    });
   });
 });
