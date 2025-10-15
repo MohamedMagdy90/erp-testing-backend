@@ -582,6 +582,7 @@ function initializeDatabase() {
       -- Additional data
       attachments TEXT, -- JSON array of attachment URLs/IDs
       tags TEXT, -- JSON array of tags
+      is_deleted BOOLEAN DEFAULT 0, -- Track explicitly deleted bugs
 
       FOREIGN KEY (session_id) REFERENCES test_sessions(session_id),
       FOREIGN KEY (module_id) REFERENCES modules(module_id)
@@ -648,6 +649,15 @@ function initializeDatabase() {
   `, (err) => {
     if (err) console.error('Error creating bug_history table:', err);
     else console.log('Bug history table ready');
+  });
+
+  // Add is_deleted column to bugs table (for existing databases)
+  db.run(`
+    ALTER TABLE bugs ADD COLUMN is_deleted BOOLEAN DEFAULT 0
+  `, (err) => {
+    if (err && !err.message.includes('duplicate column')) {
+      console.error('Note: is_deleted column may already exist or will be created with table');
+    }
   });
 
   // Create indexes for better performance - wrapped in serialize for proper sequencing
@@ -2614,12 +2624,30 @@ app.get('/api/bugs', (req, res) => {
     assignee_id,
     module_id,
     search,
+    show_deleted,
+    show_rejected,
     limit = 100,
     offset = 0
   } = req.query;
 
   let query = `SELECT * FROM bugs WHERE 1=1`;
   const params = [];
+
+  // Handle deleted and rejected filters
+  // show_deleted: 'true' = show only deleted, 'false' = hide deleted, 'all' = show all
+  // show_rejected: 'true' = show rejected (not deleted), 'false' = hide rejected
+  if (show_deleted === 'false') {
+    query += ` AND (is_deleted = 0 OR is_deleted IS NULL)`;
+  } else if (show_deleted === 'true') {
+    query += ` AND is_deleted = 1`;
+  }
+  // If show_deleted is 'all' or undefined, don't filter by is_deleted
+
+  if (show_rejected === 'false') {
+    query += ` AND (status != 'Rejected' OR is_deleted = 1)`;
+  } else if (show_rejected === 'true') {
+    query += ` AND status = 'Rejected' AND (is_deleted = 0 OR is_deleted IS NULL)`;
+  }
 
   if (status) {
     query += ` AND status = ?`;
@@ -2827,6 +2855,45 @@ app.post('/api/bugs/:bug_id/status', (req, res) => {
       });
     }
   });
+});
+
+// Delete bug (soft delete)
+app.delete('/api/bugs/:bug_id', (req, res) => {
+  const { bug_id } = req.params;
+  const { deleted_by_id, deleted_by_name } = req.body;
+
+  // Mark bug as deleted instead of actually removing it
+  db.run(
+    `UPDATE bugs SET
+      is_deleted = 1,
+      status = 'Rejected',
+      resolution = 'Won''t Fix',
+      updated_at = CURRENT_TIMESTAMP
+    WHERE bug_id = ?`,
+    [bug_id],
+    function(err) {
+      if (err) {
+        res.status(500).json({ error: err.message });
+      } else if (this.changes === 0) {
+        res.status(404).json({ error: 'Bug not found' });
+      } else {
+        // Log the deletion in history
+        db.run(
+          `INSERT INTO bug_history (bug_id, action, field_name, new_value, changed_by_id, changed_by_name)
+           VALUES (?, ?, ?, ?, ?, ?)`,
+          [bug_id, 'Deleted', 'is_deleted', 'true', deleted_by_id || 'System', deleted_by_name || 'System'],
+          (histErr) => {
+            if (histErr) console.error('Error logging bug deletion:', histErr);
+          }
+        );
+
+        res.json({
+          success: true,
+          message: 'Bug deleted successfully'
+        });
+      }
+    }
+  );
 });
 
 // Add comment to bug
