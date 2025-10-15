@@ -2708,6 +2708,45 @@ app.get('/api/bugs', (req, res) => {
   });
 });
 
+// Get bug statistics (must be before :bug_id route to avoid route conflict)
+app.get('/api/bugs/stats', (req, res) => {
+  const { module_id, assignee_id } = req.query;
+
+  let query = `
+    SELECT
+      COUNT(*) as total_bugs,
+      SUM(CASE WHEN status = 'New' THEN 1 ELSE 0 END) as new_bugs,
+      SUM(CASE WHEN status IN ('Assigned', 'In Progress') THEN 1 ELSE 0 END) as in_progress,
+      SUM(CASE WHEN status = 'Fixed' THEN 1 ELSE 0 END) as fixed,
+      SUM(CASE WHEN status = 'Verified' THEN 1 ELSE 0 END) as verified,
+      SUM(CASE WHEN status = 'Closed' THEN 1 ELSE 0 END) as closed,
+      SUM(CASE WHEN priority = 'P1' THEN 1 ELSE 0 END) as p1_bugs,
+      SUM(CASE WHEN priority = 'P2' THEN 1 ELSE 0 END) as p2_bugs,
+      SUM(CASE WHEN severity = 'Critical' THEN 1 ELSE 0 END) as critical_bugs,
+      SUM(CASE WHEN severity = 'Major' THEN 1 ELSE 0 END) as major_bugs
+    FROM bugs WHERE 1=1`;
+
+  const params = [];
+
+  if (module_id) {
+    query += ` AND module_id = ?`;
+    params.push(module_id);
+  }
+
+  if (assignee_id) {
+    query += ` AND assignee_id = ?`;
+    params.push(assignee_id);
+  }
+
+  db.get(query, params, (err, row) => {
+    if (err) {
+      res.status(500).json({ error: err.message });
+    } else {
+      res.json(row || {});
+    }
+  });
+});
+
 // Get single bug by ID
 app.get('/api/bugs/:bug_id', (req, res) => {
   const { bug_id } = req.params;
