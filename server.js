@@ -106,18 +106,26 @@ function safeJsonParse(str, defaultValue) {
     // Try to parse as JSON
     return JSON.parse(str);
   } catch (error) {
-    console.error('JSON parse error:', error.message, 'Input:', str ? str.substring(0, 100) : 'empty');
+    // Only log parse errors in development
+    if (process.env.NODE_ENV !== 'production') {
+      console.error('JSON parse error:', error.message, 'Input:', str ? str.substring(0, 100) : 'empty');
+    }
 
     // If it's a simple string that should be an array, try to convert it
     if (typeof str === 'string' && Array.isArray(defaultValue)) {
       // Check if it looks like a comma or newline separated list
       if (str.includes(',') || str.includes('\n')) {
         const items = str.split(/[,\n]/).map(s => s.trim()).filter(s => s);
-        console.log('Converted corrupted string to array:', items);
+        // Debug only in development
+        if (process.env.NODE_ENV !== 'production') {
+          console.log('Converted corrupted string to array:', items);
+        }
         return items;
       }
       // Single item - make it an array
-      console.log('Converted single string to array:', [str]);
+      if (process.env.NODE_ENV !== 'production') {
+        console.log('Converted single string to array:', [str]);
+      }
       return [str];
     }
 
@@ -1155,6 +1163,52 @@ app.get('/api/custom-tests', (req, res) => {
     });
 
     res.json(tests);
+  });
+});
+
+// Add endpoint to fix prerequisites stored as strings
+app.post('/api/admin/fix-prerequisites', (req, res) => {
+  console.log('Fixing prerequisites stored as plain strings...');
+
+  db.all(`SELECT test_id, prerequisites FROM custom_tests`, [], (err, rows) => {
+    if (err) {
+      return res.status(500).json({ error: 'Failed to fetch tests' });
+    }
+
+    let fixed = 0;
+    let errors = 0;
+
+    rows.forEach(row => {
+      if (row.prerequisites && typeof row.prerequisites === 'string') {
+        try {
+          // Try to parse as JSON first
+          JSON.parse(row.prerequisites);
+        } catch (e) {
+          // Not valid JSON, convert to JSON array
+          const jsonPrereqs = JSON.stringify([row.prerequisites]);
+
+          db.run(
+            `UPDATE custom_tests SET prerequisites = ? WHERE test_id = ?`,
+            [jsonPrereqs, row.test_id],
+            (updateErr) => {
+              if (updateErr) {
+                console.error('Error fixing prerequisites for test:', row.test_id, updateErr);
+                errors++;
+              } else {
+                fixed++;
+              }
+            }
+          );
+        }
+      }
+    });
+
+    setTimeout(() => {
+      res.json({
+        success: true,
+        message: `Fixed ${fixed} tests, ${errors} errors`
+      });
+    }, 2000);
   });
 });
 
@@ -3156,7 +3210,7 @@ app.post('/api/bugs/:bug_id/create-test', (req, res) => {
         'Verify the issue no longer occurs'
       ]),
       expected_result: bug.expected_result || 'System should work as expected without the reported issue',
-      prerequisites: `Bug ${bug.bug_id} should be in Fixed or Verified status`,
+      prerequisites: JSON.stringify([`Bug ${bug.bug_id} should be in Fixed or Verified status`]),
       test_data: JSON.stringify({
         bug_id: bug.bug_id,
         environment: safeJsonParse(bug.environment, {}),
@@ -3230,16 +3284,24 @@ app.get('/api/bugs/:bug_id/tests', (req, res) => {
       return res.json([]);
     }
 
-    // Get test details
+    // Get test details - only get active tests (not deleted)
     const placeholders = linkedTestIds.map(() => '?').join(',');
     db.all(
-      `SELECT * FROM custom_tests WHERE test_id IN (${placeholders}) ORDER BY created_at DESC`,
+      `SELECT * FROM custom_tests WHERE test_id IN (${placeholders}) AND is_active = 1 ORDER BY created_at DESC`,
       linkedTestIds,
       (err, tests) => {
         if (err) {
           res.status(500).json({ error: err.message });
         } else {
-          res.json(tests || []);
+          // Parse JSON fields for each test
+          const parsedTests = (tests || []).map(test => ({
+            ...test,
+            steps: safeJsonParse(test.steps, []),
+            prerequisites: safeJsonParse(test.prerequisites, []),
+            test_data: safeJsonParse(test.test_data, {}),
+            tags: safeJsonParse(test.tags, [])
+          }));
+          res.json(parsedTests);
         }
       }
     );
