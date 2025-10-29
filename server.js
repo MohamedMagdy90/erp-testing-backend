@@ -3640,6 +3640,8 @@ app.post('/api/features', (req, res) => {
     creator_name,
     creator_email,
     estimated_hours,
+    start_date,
+    end_date,
     technical_notes,
     api_endpoints,
     database_changes,
@@ -3666,9 +3668,9 @@ app.post('/api/features', (req, res) => {
       owner_id, owner_name, owner_email,
       developer_id, developer_name, developer_email,
       tester_id, tester_name, tester_email,
-      estimated_hours, technical_notes, api_endpoints, database_changes,
+      estimated_hours, start_date, end_date, technical_notes, api_endpoints, database_changes,
       dependencies_external, tags
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `;
 
   db.run(
@@ -3682,7 +3684,7 @@ app.post('/api/features', (req, res) => {
       owner_id, owner_name, owner_email,
       developer_id, developer_name, developer_email,
       tester_id, tester_name, tester_email,
-      estimated_hours, technical_notes,
+      estimated_hours, start_date, end_date, technical_notes,
       JSON.stringify(api_endpoints || []),
       database_changes,
       dependencies_external,
@@ -3842,6 +3844,7 @@ app.put('/api/features/:feature_id', (req, res) => {
     'developer_id', 'developer_name', 'developer_email',
     'tester_id', 'tester_name', 'tester_email',
     'estimated_hours', 'actual_hours', 'progress_percentage',
+    'start_date', 'end_date',
     'technical_notes', 'api_endpoints', 'database_changes', 'dependencies_external',
     'started_at', 'completed_at', 'released_at',
     'tags', 'is_deleted'
