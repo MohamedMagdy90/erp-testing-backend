@@ -731,6 +731,211 @@ function initializeDatabase() {
       console.error('Error creating bug_statistics view:', err);
     }
   });
+
+  // ============ UPCOMING FEATURES TABLES - NEW FEATURE ============
+  // These tables enable feature planning and tracking for upcoming releases
+  db.serialize(() => {
+    // Main Features Table
+    db.run(`
+      CREATE TABLE IF NOT EXISTS upcoming_features (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        feature_id TEXT UNIQUE NOT NULL,
+        title TEXT NOT NULL,
+        description TEXT,
+
+        -- Business Value
+        business_value TEXT,
+        user_story TEXT,
+        acceptance_criteria TEXT,
+
+        -- Classification
+        priority TEXT DEFAULT 'P3' CHECK(priority IN ('P1', 'P2', 'P3', 'P4')),
+        feature_type TEXT DEFAULT 'Enhancement' CHECK(feature_type IN (
+          'New Feature',
+          'Enhancement',
+          'Improvement',
+          'Technical Debt',
+          'Refactoring'
+        )),
+        category TEXT,
+        complexity TEXT DEFAULT 'Medium' CHECK(complexity IN ('Low', 'Medium', 'High', 'Very High')),
+
+        -- Status & Workflow
+        status TEXT DEFAULT 'Planned' CHECK(status IN (
+          'Planned',
+          'In Design',
+          'Ready for Dev',
+          'In Development',
+          'Code Review',
+          'Ready for Test',
+          'In Testing',
+          'Test Failed',
+          'Completed',
+          'On Hold',
+          'Cancelled'
+        )),
+
+        -- Relationships
+        module_id TEXT NOT NULL,
+        target_version TEXT NOT NULL,
+        linked_tests TEXT,
+        related_features TEXT,
+        dependencies TEXT,
+        blocks TEXT,
+
+        -- People
+        creator_id TEXT,
+        creator_name TEXT NOT NULL,
+        creator_email TEXT,
+        owner_id TEXT,
+        owner_name TEXT,
+        owner_email TEXT,
+        developer_id TEXT,
+        developer_name TEXT,
+        developer_email TEXT,
+        tester_id TEXT,
+        tester_name TEXT,
+        tester_email TEXT,
+
+        -- Estimation & Progress
+        estimated_hours REAL,
+        actual_hours REAL,
+        progress_percentage INTEGER DEFAULT 0 CHECK(progress_percentage >= 0 AND progress_percentage <= 100),
+
+        -- Technical Details
+        technical_notes TEXT,
+        api_endpoints TEXT,
+        database_changes TEXT,
+        dependencies_external TEXT,
+
+        -- Timestamps
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        started_at DATETIME,
+        completed_at DATETIME,
+        released_at DATETIME,
+
+        -- Additional data
+        attachments TEXT,
+        tags TEXT,
+        is_deleted BOOLEAN DEFAULT 0,
+
+        FOREIGN KEY (module_id) REFERENCES modules(module_id),
+        FOREIGN KEY (target_version) REFERENCES versions(version_id)
+      )
+    `, (err) => {
+      if (err) console.error('Error creating upcoming_features table:', err);
+      else console.log('Upcoming features table ready - Feature planning initialized');
+    });
+
+    // Feature Comments Table
+    db.run(`
+      CREATE TABLE IF NOT EXISTS feature_comments (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        feature_id TEXT NOT NULL,
+        comment_text TEXT NOT NULL,
+        author_id TEXT,
+        author_name TEXT NOT NULL,
+        author_email TEXT,
+        is_internal BOOLEAN DEFAULT 0,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (feature_id) REFERENCES upcoming_features(feature_id) ON DELETE CASCADE
+      )
+    `, (err) => {
+      if (err) console.error('Error creating feature_comments table:', err);
+      else console.log('Feature comments table ready');
+    });
+
+    // Feature History Table
+    db.run(`
+      CREATE TABLE IF NOT EXISTS feature_history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        feature_id TEXT NOT NULL,
+        action TEXT NOT NULL,
+        field_name TEXT,
+        old_value TEXT,
+        new_value TEXT,
+        changed_by_id TEXT,
+        changed_by_name TEXT NOT NULL,
+        changed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (feature_id) REFERENCES upcoming_features(feature_id) ON DELETE CASCADE
+      )
+    `, (err) => {
+      if (err) console.error('Error creating feature_history table:', err);
+      else console.log('Feature history table ready');
+    });
+
+    // Feature Attachments Table
+    db.run(`
+      CREATE TABLE IF NOT EXISTS feature_attachments (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        attachment_id TEXT UNIQUE NOT NULL,
+        feature_id TEXT NOT NULL,
+        filename TEXT NOT NULL,
+        original_name TEXT NOT NULL,
+        mimetype TEXT,
+        size INTEGER,
+        path TEXT NOT NULL,
+        uploaded_by_id TEXT,
+        uploaded_by_name TEXT,
+        uploaded_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (feature_id) REFERENCES upcoming_features(feature_id) ON DELETE CASCADE
+      )
+    `, (err) => {
+      if (err) console.error('Error creating feature_attachments table:', err);
+      else console.log('Feature attachments table ready');
+    });
+
+    // Create indexes for better performance
+    db.run(`CREATE INDEX IF NOT EXISTS idx_features_module ON upcoming_features(module_id)`, (err) => {
+      if (err && !err.message.includes('already exists')) {
+        console.error('Error creating features module index:', err);
+      }
+    });
+
+    db.run(`CREATE INDEX IF NOT EXISTS idx_features_version ON upcoming_features(target_version)`, (err) => {
+      if (err && !err.message.includes('already exists')) {
+        console.error('Error creating features version index:', err);
+      }
+    });
+
+    db.run(`CREATE INDEX IF NOT EXISTS idx_features_status ON upcoming_features(status)`, (err) => {
+      if (err && !err.message.includes('already exists')) {
+        console.error('Error creating features status index:', err);
+      }
+    });
+
+    db.run(`CREATE INDEX IF NOT EXISTS idx_features_owner ON upcoming_features(owner_id)`, (err) => {
+      if (err && !err.message.includes('already exists')) {
+        console.error('Error creating features owner index:', err);
+      }
+    });
+
+    db.run(`CREATE INDEX IF NOT EXISTS idx_features_created ON upcoming_features(created_at)`, (err) => {
+      if (err && !err.message.includes('already exists')) {
+        console.error('Error creating features created index:', err);
+      }
+    });
+
+    db.run(`CREATE INDEX IF NOT EXISTS idx_feature_comments_feature ON feature_comments(feature_id)`, (err) => {
+      if (err && !err.message.includes('already exists')) {
+        console.error('Error creating feature_comments index:', err);
+      }
+    });
+
+    db.run(`CREATE INDEX IF NOT EXISTS idx_feature_history_feature ON feature_history(feature_id)`, (err) => {
+      if (err && !err.message.includes('already exists')) {
+        console.error('Error creating feature_history index:', err);
+      }
+    });
+
+    db.run(`CREATE INDEX IF NOT EXISTS idx_feature_attachments_feature ON feature_attachments(feature_id)`, (err) => {
+      if (err && !err.message.includes('already exists')) {
+        console.error('Error creating feature_attachments index:', err);
+      }
+    });
+  }); // End of serialize block for feature tables
 }
 
 // API Routes
@@ -3405,6 +3610,757 @@ app.get('/api/bugs/:bug_id/tests', (req, res) => {
       }
     );
   });
+});
+
+// ============ UPCOMING FEATURES API ROUTES ============
+
+// Create a new feature
+app.post('/api/features', (req, res) => {
+  const {
+    title,
+    description,
+    business_value,
+    user_story,
+    acceptance_criteria,
+    priority = 'P3',
+    feature_type = 'Enhancement',
+    category,
+    complexity = 'Medium',
+    module_id,
+    target_version,
+    owner_id,
+    owner_name,
+    owner_email,
+    developer_id,
+    developer_name,
+    developer_email,
+    tester_id,
+    tester_name,
+    tester_email,
+    creator_name,
+    creator_email,
+    estimated_hours,
+    technical_notes,
+    api_endpoints,
+    database_changes,
+    dependencies_external,
+    tags
+  } = req.body;
+
+  // Validate required fields
+  if (!title || !module_id || !target_version || !creator_name) {
+    return res.status(400).json({
+      error: 'Missing required fields: title, module_id, target_version, creator_name'
+    });
+  }
+
+  // Generate unique feature ID
+  const feature_id = `FEAT-${new Date().getFullYear()}-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
+
+  const sql = `
+    INSERT INTO upcoming_features (
+      feature_id, title, description, business_value, user_story, acceptance_criteria,
+      priority, feature_type, category, complexity,
+      module_id, target_version,
+      creator_name, creator_email,
+      owner_id, owner_name, owner_email,
+      developer_id, developer_name, developer_email,
+      tester_id, tester_name, tester_email,
+      estimated_hours, technical_notes, api_endpoints, database_changes,
+      dependencies_external, tags
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `;
+
+  db.run(
+    sql,
+    [
+      feature_id, title, description, business_value, user_story,
+      JSON.stringify(acceptance_criteria || []),
+      priority, feature_type, category, complexity,
+      module_id, target_version,
+      creator_name, creator_email,
+      owner_id, owner_name, owner_email,
+      developer_id, developer_name, developer_email,
+      tester_id, tester_name, tester_email,
+      estimated_hours, technical_notes,
+      JSON.stringify(api_endpoints || []),
+      database_changes,
+      dependencies_external,
+      JSON.stringify(tags || [])
+    ],
+    function(err) {
+      if (err) {
+        console.error('Error creating feature:', err);
+        res.status(500).json({ error: err.message });
+      } else {
+        // Log to history
+        db.run(
+          `INSERT INTO feature_history (feature_id, action, changed_by_name, changed_at)
+           VALUES (?, ?, ?, CURRENT_TIMESTAMP)`,
+          [feature_id, 'Feature Created', creator_name]
+        );
+
+        res.json({
+          success: true,
+          feature_id,
+          message: 'Feature created successfully'
+        });
+      }
+    }
+  );
+});
+
+// Get all features with filters
+app.get('/api/features', (req, res) => {
+  const {
+    status,
+    priority,
+    module_id,
+    target_version,
+    owner_id,
+    search,
+    show_deleted = 'false',
+    limit = 100,
+    offset = 0
+  } = req.query;
+
+  let sql = 'SELECT * FROM upcoming_features WHERE 1=1';
+  const params = [];
+
+  // Apply filters
+  if (status) {
+    sql += ' AND status = ?';
+    params.push(status);
+  }
+
+  if (priority) {
+    sql += ' AND priority = ?';
+    params.push(priority);
+  }
+
+  if (module_id) {
+    sql += ' AND module_id = ?';
+    params.push(module_id);
+  }
+
+  if (target_version) {
+    sql += ' AND target_version = ?';
+    params.push(target_version);
+  }
+
+  if (owner_id) {
+    sql += ' AND owner_id = ?';
+    params.push(owner_id);
+  }
+
+  if (search) {
+    sql += ' AND (title LIKE ? OR description LIKE ?)';
+    params.push(`%${search}%`, `%${search}%`);
+  }
+
+  // Handle deleted features
+  if (show_deleted === 'false') {
+    sql += ' AND is_deleted = 0';
+  } else if (show_deleted === 'only') {
+    sql += ' AND is_deleted = 1';
+  }
+
+  // Order by created_at DESC (most recent first)
+  sql += ' ORDER BY created_at DESC LIMIT ? OFFSET ?';
+  params.push(parseInt(limit), parseInt(offset));
+
+  db.all(sql, params, (err, rows) => {
+    if (err) {
+      console.error('Error fetching features:', err);
+      res.status(500).json({ error: err.message });
+    } else {
+      // Parse JSON fields
+      const features = rows.map(f => ({
+        ...f,
+        acceptance_criteria: safeJsonParse(f.acceptance_criteria, []),
+        linked_tests: safeJsonParse(f.linked_tests, []),
+        related_features: safeJsonParse(f.related_features, []),
+        dependencies: safeJsonParse(f.dependencies, []),
+        blocks: safeJsonParse(f.blocks, []),
+        api_endpoints: safeJsonParse(f.api_endpoints, []),
+        attachments: safeJsonParse(f.attachments, []),
+        tags: safeJsonParse(f.tags, []),
+        is_deleted: Boolean(f.is_deleted)
+      }));
+      res.json(features);
+    }
+  });
+});
+
+// Get single feature
+app.get('/api/features/:feature_id', (req, res) => {
+  const { feature_id } = req.params;
+
+  db.get(
+    'SELECT * FROM upcoming_features WHERE feature_id = ?',
+    [feature_id],
+    (err, row) => {
+      if (err) {
+        res.status(500).json({ error: err.message });
+      } else if (!row) {
+        res.status(404).json({ error: 'Feature not found' });
+      } else {
+        // Parse JSON fields
+        const feature = {
+          ...row,
+          acceptance_criteria: safeJsonParse(row.acceptance_criteria, []),
+          linked_tests: safeJsonParse(row.linked_tests, []),
+          related_features: safeJsonParse(row.related_features, []),
+          dependencies: safeJsonParse(row.dependencies, []),
+          blocks: safeJsonParse(row.blocks, []),
+          api_endpoints: safeJsonParse(row.api_endpoints, []),
+          attachments: safeJsonParse(row.attachments, []),
+          tags: safeJsonParse(row.tags, []),
+          is_deleted: Boolean(row.is_deleted)
+        };
+        res.json(feature);
+      }
+    }
+  );
+});
+
+// Update feature
+app.put('/api/features/:feature_id', (req, res) => {
+  const { feature_id } = req.params;
+  const updates = req.body;
+  const changed_by_name = updates.changed_by_name || 'Unknown';
+
+  // Remove changed_by_name from updates
+  delete updates.changed_by_name;
+
+  // Build dynamic UPDATE query
+  const allowedFields = [
+    'title', 'description', 'business_value', 'user_story', 'acceptance_criteria',
+    'priority', 'feature_type', 'category', 'complexity', 'status',
+    'module_id', 'target_version',
+    'owner_id', 'owner_name', 'owner_email',
+    'developer_id', 'developer_name', 'developer_email',
+    'tester_id', 'tester_name', 'tester_email',
+    'estimated_hours', 'actual_hours', 'progress_percentage',
+    'technical_notes', 'api_endpoints', 'database_changes', 'dependencies_external',
+    'started_at', 'completed_at', 'released_at',
+    'tags', 'is_deleted'
+  ];
+
+  const setClauses = [];
+  const params = [];
+
+  // First get current values for history
+  db.get('SELECT * FROM upcoming_features WHERE feature_id = ?', [feature_id], (err, oldFeature) => {
+    if (err || !oldFeature) {
+      return res.status(404).json({ error: 'Feature not found' });
+    }
+
+    for (const [key, value] of Object.entries(updates)) {
+      if (allowedFields.includes(key)) {
+        setClauses.push(`${key} = ?`);
+        // Stringify arrays/objects
+        if (Array.isArray(value) || (typeof value === 'object' && value !== null)) {
+          params.push(JSON.stringify(value));
+        } else {
+          params.push(value);
+        }
+
+        // Log change to history
+        const oldValue = oldFeature[key];
+        const newValue = value;
+        if (oldValue !== newValue) {
+          db.run(
+            `INSERT INTO feature_history (feature_id, action, field_name, old_value, new_value, changed_by_name, changed_at)
+             VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+            [feature_id, 'Field Updated', key, String(oldValue || ''), String(newValue || ''), changed_by_name]
+          );
+        }
+      }
+    }
+
+    if (setClauses.length === 0) {
+      return res.status(400).json({ error: 'No valid fields to update' });
+    }
+
+    setClauses.push('updated_at = CURRENT_TIMESTAMP');
+    params.push(feature_id);
+
+    const sql = `UPDATE upcoming_features SET ${setClauses.join(', ')} WHERE feature_id = ?`;
+
+    db.run(sql, params, function(err) {
+      if (err) {
+        console.error('Error updating feature:', err);
+        res.status(500).json({ error: err.message });
+      } else {
+        res.json({ success: true, message: 'Feature updated successfully' });
+      }
+    });
+  });
+});
+
+// Update feature status
+app.put('/api/features/:feature_id/status', (req, res) => {
+  const { feature_id } = req.params;
+  const { status, changed_by_name } = req.body;
+
+  if (!status) {
+    return res.status(400).json({ error: 'Status is required' });
+  }
+
+  // Get current status for history
+  db.get('SELECT status FROM upcoming_features WHERE feature_id = ?', [feature_id], (err, row) => {
+    if (err || !row) {
+      return res.status(404).json({ error: 'Feature not found' });
+    }
+
+    const oldStatus = row.status;
+
+    // Update status
+    db.run(
+      'UPDATE upcoming_features SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE feature_id = ?',
+      [status, feature_id],
+      function(err) {
+        if (err) {
+          res.status(500).json({ error: err.message });
+        } else {
+          // Log to history
+          db.run(
+            `INSERT INTO feature_history (feature_id, action, field_name, old_value, new_value, changed_by_name, changed_at)
+             VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+            [feature_id, 'Status Changed', 'status', oldStatus, status, changed_by_name || 'Unknown']
+          );
+
+          res.json({ success: true, message: 'Feature status updated' });
+        }
+      }
+    );
+  });
+});
+
+// Delete feature (soft delete)
+app.delete('/api/features/:feature_id', (req, res) => {
+  const { feature_id } = req.params;
+  const { changed_by_name } = req.body;
+
+  db.run(
+    'UPDATE upcoming_features SET is_deleted = 1, status = ?, updated_at = CURRENT_TIMESTAMP WHERE feature_id = ?',
+    ['Cancelled', feature_id],
+    function(err) {
+      if (err) {
+        res.status(500).json({ error: err.message });
+      } else {
+        // Log to history
+        db.run(
+          `INSERT INTO feature_history (feature_id, action, changed_by_name, changed_at)
+           VALUES (?, ?, ?, CURRENT_TIMESTAMP)`,
+          [feature_id, 'Feature Cancelled/Deleted', changed_by_name || 'Unknown']
+        );
+
+        res.json({ success: true, message: 'Feature cancelled successfully' });
+      }
+    }
+  );
+});
+
+// Link test to feature
+app.post('/api/features/:feature_id/link-test', (req, res) => {
+  const { feature_id } = req.params;
+  const { test_id, changed_by_name } = req.body;
+
+  if (!test_id) {
+    return res.status(400).json({ error: 'test_id is required' });
+  }
+
+  // Get current linked tests
+  db.get('SELECT linked_tests FROM upcoming_features WHERE feature_id = ?', [feature_id], (err, row) => {
+    if (err || !row) {
+      return res.status(404).json({ error: 'Feature not found' });
+    }
+
+    let linkedTests = safeJsonParse(row.linked_tests, []);
+
+    // Add test if not already linked
+    if (!linkedTests.includes(test_id)) {
+      linkedTests.push(test_id);
+
+      db.run(
+        'UPDATE upcoming_features SET linked_tests = ?, updated_at = CURRENT_TIMESTAMP WHERE feature_id = ?',
+        [JSON.stringify(linkedTests), feature_id],
+        function(err) {
+          if (err) {
+            res.status(500).json({ error: err.message });
+          } else {
+            // Log to history
+            db.run(
+              `INSERT INTO feature_history (feature_id, action, field_name, new_value, changed_by_name, changed_at)
+               VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+              [feature_id, 'Test Linked', 'linked_tests', test_id, changed_by_name || 'Unknown']
+            );
+
+            res.json({ success: true, message: 'Test linked to feature' });
+          }
+        }
+      );
+    } else {
+      res.json({ success: true, message: 'Test already linked' });
+    }
+  });
+});
+
+// Unlink test from feature
+app.delete('/api/features/:feature_id/unlink-test/:test_id', (req, res) => {
+  const { feature_id, test_id } = req.params;
+  const { changed_by_name } = req.body;
+
+  db.get('SELECT linked_tests FROM upcoming_features WHERE feature_id = ?', [feature_id], (err, row) => {
+    if (err || !row) {
+      return res.status(404).json({ error: 'Feature not found' });
+    }
+
+    let linkedTests = safeJsonParse(row.linked_tests, []);
+    linkedTests = linkedTests.filter(id => id !== test_id);
+
+    db.run(
+      'UPDATE upcoming_features SET linked_tests = ?, updated_at = CURRENT_TIMESTAMP WHERE feature_id = ?',
+      [JSON.stringify(linkedTests), feature_id],
+      function(err) {
+        if (err) {
+          res.status(500).json({ error: err.message });
+        } else {
+          // Log to history
+          db.run(
+            `INSERT INTO feature_history (feature_id, action, field_name, old_value, changed_by_name, changed_at)
+             VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+            [feature_id, 'Test Unlinked', 'linked_tests', test_id, changed_by_name || 'Unknown']
+          );
+
+          res.json({ success: true, message: 'Test unlinked from feature' });
+        }
+      }
+    );
+  });
+});
+
+// Get linked tests for a feature
+app.get('/api/features/:feature_id/linked-tests', (req, res) => {
+  const { feature_id } = req.params;
+
+  db.get('SELECT linked_tests FROM upcoming_features WHERE feature_id = ?', [feature_id], (err, row) => {
+    if (err || !row) {
+      return res.status(404).json({ error: 'Feature not found' });
+    }
+
+    const linkedTestIds = safeJsonParse(row.linked_tests, []);
+    if (linkedTestIds.length === 0) {
+      return res.json([]);
+    }
+
+    // Get test details
+    const placeholders = linkedTestIds.map(() => '?').join(',');
+    db.all(
+      `SELECT * FROM custom_tests WHERE test_id IN (${placeholders}) AND is_active = 1 ORDER BY created_at DESC`,
+      linkedTestIds,
+      (err, tests) => {
+        if (err) {
+          res.status(500).json({ error: err.message });
+        } else {
+          const parsedTests = (tests || []).map(test => ({
+            ...test,
+            steps: safeJsonParse(test.steps, []),
+            prerequisites: safeJsonParse(test.prerequisites, []),
+            test_data: safeJsonParse(test.test_data, {}),
+            tags: safeJsonParse(test.tags, [])
+          }));
+          res.json(parsedTests);
+        }
+      }
+    );
+  });
+});
+
+// Get features linked to a test
+app.get('/api/tests/:test_id/linked-features', (req, res) => {
+  const { test_id } = req.params;
+
+  db.all(
+    `SELECT * FROM upcoming_features WHERE linked_tests LIKE ? AND is_deleted = 0 ORDER BY created_at DESC`,
+    [`%"${test_id}"%`],
+    (err, rows) => {
+      if (err) {
+        res.status(500).json({ error: err.message });
+      } else {
+        const features = rows.map(f => ({
+          ...f,
+          acceptance_criteria: safeJsonParse(f.acceptance_criteria, []),
+          linked_tests: safeJsonParse(f.linked_tests, []),
+          related_features: safeJsonParse(f.related_features, []),
+          tags: safeJsonParse(f.tags, [])
+        }));
+        res.json(features);
+      }
+    }
+  );
+});
+
+// Add comment to feature
+app.post('/api/features/:feature_id/comments', (req, res) => {
+  const { feature_id } = req.params;
+  const { comment_text, author_name, author_email, author_id, is_internal = false } = req.body;
+
+  if (!comment_text || !author_name) {
+    return res.status(400).json({ error: 'comment_text and author_name are required' });
+  }
+
+  db.run(
+    `INSERT INTO feature_comments (feature_id, comment_text, author_id, author_name, author_email, is_internal)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+    [feature_id, comment_text, author_id, author_name, author_email, is_internal ? 1 : 0],
+    function(err) {
+      if (err) {
+        res.status(500).json({ error: err.message });
+      } else {
+        res.json({ success: true, comment_id: this.lastID, message: 'Comment added' });
+      }
+    }
+  );
+});
+
+// Get comments for a feature
+app.get('/api/features/:feature_id/comments', (req, res) => {
+  const { feature_id } = req.params;
+
+  db.all(
+    'SELECT * FROM feature_comments WHERE feature_id = ? ORDER BY created_at DESC',
+    [feature_id],
+    (err, rows) => {
+      if (err) {
+        res.status(500).json({ error: err.message });
+      } else {
+        res.json(rows || []);
+      }
+    }
+  );
+});
+
+// Get feature history
+app.get('/api/features/:feature_id/history', (req, res) => {
+  const { feature_id } = req.params;
+
+  db.all(
+    'SELECT * FROM feature_history WHERE feature_id = ? ORDER BY changed_at DESC',
+    [feature_id],
+    (err, rows) => {
+      if (err) {
+        res.status(500).json({ error: err.message });
+      } else {
+        res.json(rows || []);
+      }
+    }
+  );
+});
+
+// Upload attachment to feature
+app.post('/api/features/:feature_id/attachments', upload.array('files', 5), (req, res) => {
+  const { feature_id } = req.params;
+  const { uploaded_by_name, uploaded_by_id } = req.body;
+
+  if (!req.files || req.files.length === 0) {
+    return res.status(400).json({ error: 'No files uploaded' });
+  }
+
+  // Create features upload directory if needed
+  const featureUploadsDir = path.join(uploadsDir, 'features');
+  if (!fs.existsSync(featureUploadsDir)) {
+    fs.mkdirSync(featureUploadsDir, { recursive: true });
+  }
+
+  const attachments = [];
+  const insertPromises = req.files.map(file => {
+    return new Promise((resolve, reject) => {
+      const attachment_id = `ATT-FEAT-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
+      const newPath = path.join(featureUploadsDir, file.filename);
+
+      // Move file to features directory
+      fs.rename(file.path, newPath, (err) => {
+        if (err) {
+          console.error('Error moving file:', err);
+          return reject(err);
+        }
+
+        db.run(
+          `INSERT INTO feature_attachments (
+            attachment_id, feature_id, filename, original_name, mimetype, size, path,
+            uploaded_by_id, uploaded_by_name
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            attachment_id,
+            feature_id,
+            file.filename,
+            file.originalname,
+            file.mimetype,
+            file.size,
+            `/uploads/features/${file.filename}`,
+            uploaded_by_id,
+            uploaded_by_name
+          ],
+          function(err) {
+            if (err) {
+              reject(err);
+            } else {
+              attachments.push({
+                attachment_id,
+                filename: file.filename,
+                original_name: file.originalname,
+                path: `/uploads/features/${file.filename}`
+              });
+              resolve();
+            }
+          }
+        );
+      });
+    });
+  });
+
+  Promise.all(insertPromises)
+    .then(() => {
+      res.json({
+        success: true,
+        message: `${attachments.length} file(s) uploaded successfully`,
+        attachments
+      });
+    })
+    .catch(err => {
+      console.error('Error uploading attachments:', err);
+      res.status(500).json({ error: err.message });
+    });
+});
+
+// Get attachments for a feature
+app.get('/api/features/:feature_id/attachments', (req, res) => {
+  const { feature_id } = req.params;
+
+  db.all(
+    'SELECT * FROM feature_attachments WHERE feature_id = ? ORDER BY uploaded_at DESC',
+    [feature_id],
+    (err, rows) => {
+      if (err) {
+        res.status(500).json({ error: err.message });
+      } else {
+        res.json(rows || []);
+      }
+    }
+  );
+});
+
+// Delete attachment
+app.delete('/api/features/:feature_id/attachments/:attachment_id', (req, res) => {
+  const { attachment_id } = req.params;
+
+  // Get attachment info first
+  db.get(
+    'SELECT * FROM feature_attachments WHERE attachment_id = ?',
+    [attachment_id],
+    (err, attachment) => {
+      if (err || !attachment) {
+        return res.status(404).json({ error: 'Attachment not found' });
+      }
+
+      // Delete file from filesystem
+      const filePath = path.join(uploadsDir, 'features', attachment.filename);
+      fs.unlink(filePath, (err) => {
+        if (err) {
+          console.error('Error deleting file:', err);
+        }
+      });
+
+      // Delete from database
+      db.run(
+        'DELETE FROM feature_attachments WHERE attachment_id = ?',
+        [attachment_id],
+        function(err) {
+          if (err) {
+            res.status(500).json({ error: err.message });
+          } else {
+            res.json({ success: true, message: 'Attachment deleted' });
+          }
+        }
+      );
+    }
+  );
+});
+
+// Get feature statistics
+app.get('/api/features/stats', (req, res) => {
+  db.get(
+    `SELECT
+      COUNT(*) as total_features,
+      SUM(CASE WHEN status = 'Planned' THEN 1 ELSE 0 END) as planned,
+      SUM(CASE WHEN status = 'In Design' THEN 1 ELSE 0 END) as in_design,
+      SUM(CASE WHEN status = 'In Development' THEN 1 ELSE 0 END) as in_development,
+      SUM(CASE WHEN status = 'In Testing' THEN 1 ELSE 0 END) as in_testing,
+      SUM(CASE WHEN status = 'Completed' THEN 1 ELSE 0 END) as completed,
+      SUM(CASE WHEN priority = 'P1' THEN 1 ELSE 0 END) as p1_features,
+      SUM(CASE WHEN priority = 'P2' THEN 1 ELSE 0 END) as p2_features,
+      SUM(CASE WHEN priority = 'P3' THEN 1 ELSE 0 END) as p3_features,
+      SUM(CASE WHEN priority = 'P4' THEN 1 ELSE 0 END) as p4_features
+    FROM upcoming_features
+    WHERE is_deleted = 0`,
+    [],
+    (err, row) => {
+      if (err) {
+        res.status(500).json({ error: err.message });
+      } else {
+        res.json(row || {});
+      }
+    }
+  );
+});
+
+// Get features by version
+app.get('/api/features/by-version/:version_id', (req, res) => {
+  const { version_id } = req.params;
+
+  db.all(
+    'SELECT * FROM upcoming_features WHERE target_version = ? AND is_deleted = 0 ORDER BY priority, created_at DESC',
+    [version_id],
+    (err, rows) => {
+      if (err) {
+        res.status(500).json({ error: err.message });
+      } else {
+        const features = rows.map(f => ({
+          ...f,
+          acceptance_criteria: safeJsonParse(f.acceptance_criteria, []),
+          linked_tests: safeJsonParse(f.linked_tests, []),
+          tags: safeJsonParse(f.tags, [])
+        }));
+        res.json(features);
+      }
+    }
+  );
+});
+
+// Get features by module
+app.get('/api/features/by-module/:module_id', (req, res) => {
+  const { module_id } = req.params;
+
+  db.all(
+    'SELECT * FROM upcoming_features WHERE module_id = ? AND is_deleted = 0 ORDER BY priority, created_at DESC',
+    [module_id],
+    (err, rows) => {
+      if (err) {
+        res.status(500).json({ error: err.message });
+      } else {
+        const features = rows.map(f => ({
+          ...f,
+          acceptance_criteria: safeJsonParse(f.acceptance_criteria, []),
+          linked_tests: safeJsonParse(f.linked_tests, []),
+          tags: safeJsonParse(f.tags, [])
+        }));
+        res.json(features);
+      }
+    }
+  );
 });
 
 // Start server with error handling
