@@ -3911,30 +3911,64 @@ app.put('/api/features/:feature_id/status', (req, res) => {
     return res.status(400).json({ error: 'Status is required' });
   }
 
-  // Get current status for history
-  db.get('SELECT status FROM upcoming_features WHERE feature_id = ?', [feature_id], (err, row) => {
+  // Calculate automatic progress based on status
+  const statusProgressMap = {
+    'Planned': 0,
+    'In Design': 10,
+    'Ready for Dev': 20,
+    'In Development': 40,
+    'Code Review': 60,
+    'Ready for Test': 70,
+    'In Testing': 80,
+    'Test Failed': 75,
+    'Completed': 100,
+    // For On Hold and Cancelled, we keep the current progress (handled below)
+  };
+
+  // Get current status and progress for history
+  db.get('SELECT status, progress_percentage FROM upcoming_features WHERE feature_id = ?', [feature_id], (err, row) => {
     if (err || !row) {
       return res.status(404).json({ error: 'Feature not found' });
     }
 
     const oldStatus = row.status;
+    const oldProgress = row.progress_percentage;
 
-    // Update status
+    // Calculate new progress based on status
+    // If status is On Hold or Cancelled, keep current progress
+    const newProgress = statusProgressMap[status] !== undefined
+      ? statusProgressMap[status]
+      : oldProgress;
+
+    // Update status and progress
     db.run(
-      'UPDATE upcoming_features SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE feature_id = ?',
-      [status, feature_id],
+      'UPDATE upcoming_features SET status = ?, progress_percentage = ?, updated_at = CURRENT_TIMESTAMP WHERE feature_id = ?',
+      [status, newProgress, feature_id],
       function(err) {
         if (err) {
           res.status(500).json({ error: err.message });
         } else {
-          // Log to history
+          // Log status change to history
           db.run(
             `INSERT INTO feature_history (feature_id, action, field_name, old_value, new_value, changed_by_name, changed_at)
              VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
             [feature_id, 'Status Changed', 'status', oldStatus, status, changed_by_name || 'Unknown']
           );
 
-          res.json({ success: true, message: 'Feature status updated' });
+          // Also log progress change if it changed
+          if (newProgress !== oldProgress) {
+            db.run(
+              `INSERT INTO feature_history (feature_id, action, field_name, old_value, new_value, changed_by_name, changed_at)
+               VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+              [feature_id, 'Auto-updated from Status', 'progress_percentage', String(oldProgress), String(newProgress), 'System']
+            );
+          }
+
+          res.json({
+            success: true,
+            message: 'Feature status updated',
+            progress_percentage: newProgress
+          });
         }
       }
     );
