@@ -1,0 +1,27 @@
+# Dependencies
+node_modules/
+
+# Database files (created at runtime / stored on persistent volume)
+testing_feedback.db
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+
+# Uploaded files (stored on persistent volume)
+uploads/
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS files
+.DS_Store
+Thumbs.db
